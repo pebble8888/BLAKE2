@@ -16,6 +16,7 @@
 #include <stdint.h>
 #include <string.h>
 #include <stdio.h>
+#include <assert.h>
 
 #include "blake2.h"
 #include "blake2-impl.h"
@@ -116,36 +117,37 @@ int blake2b_init( blake2b_state *S, size_t outlen )
 
 int blake2b_init_key( blake2b_state *S, size_t outlen, const void *key, size_t keylen )
 {
-  blake2b_param P[1];
+    blake2b_param P[1];
 
-  if ( ( !outlen ) || ( outlen > BLAKE2B_OUTBYTES ) ) return -1;
+    if ( ( !outlen ) || ( outlen > BLAKE2B_OUTBYTES ) ) return -1;
 
-  if ( ( !keylen ) || keylen > BLAKE2B_KEYBYTES ) return -1;
+    if ( ( !keylen ) || keylen > BLAKE2B_KEYBYTES ) return -1;
 
-  P->digest_length = (uint8_t)outlen;
-  P->key_length    = (uint8_t)keylen;
-  P->fanout        = 1;
-  P->depth         = 1;
-  store32( &P->leaf_length, 0 );
-  store32( &P->node_offset, 0 );
-  store32( &P->xof_length, 0 );
-  P->node_depth    = 0;
-  P->inner_length  = 0;
-  memset( P->reserved, 0, sizeof( P->reserved ) );
-  memset( P->salt,     0, sizeof( P->salt ) );
-  memset( P->personal, 0, sizeof( P->personal ) );
+    P->digest_length = (uint8_t)outlen;
+    P->key_length    = (uint8_t)keylen;
+    P->fanout        = 1;
+    P->depth         = 1;
+    store32( &P->leaf_length, 0 );
+    store32( &P->node_offset, 0 );
+    store32( &P->xof_length, 0 );
+    P->node_depth    = 0;
+    P->inner_length  = 0;
+    memset( P->reserved, 0, sizeof( P->reserved ) );
+    memset( P->salt,     0, sizeof( P->salt ) );
+    memset( P->personal, 0, sizeof( P->personal ) );
 
-  if( blake2b_init_param( S, P ) < 0 )
+    if( blake2b_init_param( S, P ) < 0 )
+        return 0;
+
+    {
+        uint8_t block[BLAKE2B_BLOCKBYTES];
+        memset( block, 0, BLAKE2B_BLOCKBYTES );
+        memcpy( block, key, keylen );
+        printf("file:%s line:%d\n", __FILE__, __LINE__);
+        blake2b_update( S, block, BLAKE2B_BLOCKBYTES );
+        secure_zero_memory( block, BLAKE2B_BLOCKBYTES ); /* Burn the key from stack */
+    }
     return 0;
-
-  {
-    uint8_t block[BLAKE2B_BLOCKBYTES];
-    memset( block, 0, BLAKE2B_BLOCKBYTES );
-    memcpy( block, key, keylen );
-    blake2b_update( S, block, BLAKE2B_BLOCKBYTES );
-    secure_zero_memory( block, BLAKE2B_BLOCKBYTES ); /* Burn the key from stack */
-  }
-  return 0;
 }
 
 static void blake2b_compress( blake2b_state *S, const uint8_t block[BLAKE2B_BLOCKBYTES] )
@@ -220,29 +222,30 @@ static void blake2b_compress( blake2b_state *S, const uint8_t block[BLAKE2B_BLOC
 
 int blake2b_update( blake2b_state *S, const void *pin, size_t inlen )
 {
-  const unsigned char * in = (const unsigned char *)pin;
-  if( inlen > 0 )
-  {
-    size_t left = S->buflen;
-    size_t fill = BLAKE2B_BLOCKBYTES - left;
-    if( inlen > fill )
+    const unsigned char * in = (const unsigned char *)pin;
+    if( inlen > 0 )
     {
-      S->buflen = 0;
-      memcpy( S->buf + left, in, fill ); /* Fill buffer */
-      blake2b_increment_counter( S, BLAKE2B_BLOCKBYTES );
-      blake2b_compress( S, S->buf ); /* Compress */
-      in += fill; inlen -= fill;
-      while(inlen > BLAKE2B_BLOCKBYTES) {
-        blake2b_increment_counter(S, BLAKE2B_BLOCKBYTES);
-        blake2b_compress( S, in );
-        in += BLAKE2B_BLOCKBYTES;
-        inlen -= BLAKE2B_BLOCKBYTES;
-      }
+        size_t left = S->buflen;
+        size_t fill = BLAKE2B_BLOCKBYTES - left;
+        if( inlen > fill )
+        {
+            S->buflen = 0;
+            memcpy( S->buf + left, in, fill ); /* Fill buffer */
+            blake2b_increment_counter( S, BLAKE2B_BLOCKBYTES );
+            blake2b_compress( S, S->buf ); /* Compress */
+           
+            in += fill; inlen -= fill;
+            while(inlen > BLAKE2B_BLOCKBYTES) {
+                blake2b_increment_counter(S, BLAKE2B_BLOCKBYTES);
+                blake2b_compress( S, in );
+                in += BLAKE2B_BLOCKBYTES;
+                inlen -= BLAKE2B_BLOCKBYTES;
+            }
+        }
+        memcpy( S->buf + S->buflen, in, inlen );
+        S->buflen += inlen;
     }
-    memcpy( S->buf + S->buflen, in, inlen );
-    S->buflen += inlen;
-  }
-  return 0;
+    return 0;
 }
 
 
@@ -288,9 +291,10 @@ int blake2b( void *out, size_t outlen, const void *in, size_t inlen, const void 
     if( blake2b_init( S, outlen ) < 0 ) return -1;
   }
 
-  blake2b_update( S, ( const uint8_t * )in, inlen );
-  blake2b_final( S, out, outlen );
-  return 0;
+    printf("file:%s line:%d\n", __FILE__, __LINE__);
+    blake2b_update( S, ( const uint8_t * )in, inlen );
+    blake2b_final( S, out, outlen );
+    return 0;
 }
 
 int blake2( void *out, size_t outlen, const void *in, size_t inlen, const void *key, size_t keylen ) {
@@ -345,14 +349,16 @@ int main( void )
       }
 
       while (mlen >= step) {
-        if ( (err = blake2b_update(&S, p, step)) < 0 ) {
-          goto fail;
-        }
-        mlen -= step;
-        p += step;
+          printf("file:%s line:%d\n", __FILE__, __LINE__);
+          if ( (err = blake2b_update(&S, p, step)) < 0 ) {
+              goto fail;
+          }
+          mlen -= step;
+          p += step;
       }
+      printf("file:%s line:%d\n", __FILE__, __LINE__);
       if ( (err = blake2b_update(&S, p, mlen)) < 0) {
-        goto fail;
+          goto fail;
       }
       if ( (err = blake2b_final(&S, hash, BLAKE2B_OUTBYTES)) < 0) {
         goto fail;

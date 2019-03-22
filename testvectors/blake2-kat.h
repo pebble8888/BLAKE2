@@ -5661,6 +5661,7 @@ static const uint8_t blake2b_kat[BLAKE2_KAT_LENGTH][BLAKE2B_OUTBYTES] =
 
 
 
+/* FX */
 static const uint8_t blake2b_keyed_kat[BLAKE2_KAT_LENGTH][BLAKE2B_OUTBYTES] = 
 {
 	{

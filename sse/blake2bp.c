@@ -90,8 +90,9 @@ int blake2bp_init( blake2bp_state *S, size_t outlen )
   if( blake2bp_init_root( S->R, outlen, 0 ) < 0 )
     return -1;
 
-  for( i = 0; i < PARALLELISM_DEGREE; ++i )
+  for( i = 0; i < PARALLELISM_DEGREE; ++i ) {
     if( blake2bp_init_leaf( S->S[i], outlen, 0, i ) < 0 ) return -1;
+  }
 
   S->R->last_node = 1;
   S->S[PARALLELISM_DEGREE - 1]->last_node = 1;
@@ -123,8 +124,10 @@ int blake2bp_init_key( blake2bp_state *S, size_t outlen, const void *key, size_t
     memset( block, 0, BLAKE2B_BLOCKBYTES );
     memcpy( block, key, keylen );
 
-    for( i = 0; i < PARALLELISM_DEGREE; ++i )
-      blake2b_update( S->S[i], block, BLAKE2B_BLOCKBYTES );
+    for( i = 0; i < PARALLELISM_DEGREE; ++i ) {
+        printf("file:%s line:%d\n", __FILE__, __LINE__);
+        blake2b_update( S->S[i], block, BLAKE2B_BLOCKBYTES );
+    }
 
     secure_zero_memory( block, BLAKE2B_BLOCKBYTES ); /* Burn the key from stack */
   }
@@ -143,8 +146,10 @@ int blake2bp_update( blake2bp_state *S, const void *pin, size_t inlen )
   {
     memcpy( S->buf + left, in, fill );
 
-    for( i = 0; i < PARALLELISM_DEGREE; ++i )
-      blake2b_update( S->S[i], S->buf + i * BLAKE2B_BLOCKBYTES, BLAKE2B_BLOCKBYTES );
+    for( i = 0; i < PARALLELISM_DEGREE; ++i ) {
+        printf("file:%s line:%d\n", __FILE__, __LINE__);
+        blake2b_update( S->S[i], S->buf + i * BLAKE2B_BLOCKBYTES, BLAKE2B_BLOCKBYTES );
+    }
 
     in += fill;
     inlen -= fill;
@@ -167,6 +172,7 @@ int blake2bp_update( blake2bp_state *S, const void *pin, size_t inlen )
 
     while( inlen__ >= PARALLELISM_DEGREE * BLAKE2B_BLOCKBYTES )
     {
+        printf("file:%s line:%d\n", __FILE__, __LINE__);
       blake2b_update( S->S[i], in__, BLAKE2B_BLOCKBYTES );
       in__ += PARALLELISM_DEGREE * BLAKE2B_BLOCKBYTES;
       inlen__ -= PARALLELISM_DEGREE * BLAKE2B_BLOCKBYTES;
@@ -202,6 +208,7 @@ int blake2bp_final( blake2bp_state *S, void *out, size_t outlen )
 
       if( left > BLAKE2B_BLOCKBYTES ) left = BLAKE2B_BLOCKBYTES;
 
+        printf("file:%s line:%d\n", __FILE__, __LINE__);
       blake2b_update( S->S[i], S->buf + i * BLAKE2B_BLOCKBYTES, left );
     }
 
@@ -209,6 +216,7 @@ int blake2bp_final( blake2bp_state *S, void *out, size_t outlen )
   }
 
   for( i = 0; i < PARALLELISM_DEGREE; ++i )
+        printf("file:%s line:%d\n", __FILE__, __LINE__);
     blake2b_update( S->R, hash[i], BLAKE2B_OUTBYTES );
 
   return blake2b_final( S->R, out, S->outlen );
@@ -243,8 +251,10 @@ int blake2bp( void *out, size_t outlen, const void *in, size_t inlen, const void
     memset( block, 0, BLAKE2B_BLOCKBYTES );
     memcpy( block, key, keylen );
 
-    for( i = 0; i < PARALLELISM_DEGREE; ++i )
+    for( i = 0; i < PARALLELISM_DEGREE; ++i ) {
+        printf("file:%s line:%d\n", __FILE__, __LINE__);
       blake2b_update( S[i], block, BLAKE2B_BLOCKBYTES );
+    }
 
     secure_zero_memory( block, BLAKE2B_BLOCKBYTES ); /* Burn the key from stack */
   }
@@ -265,6 +275,7 @@ int blake2bp( void *out, size_t outlen, const void *in, size_t inlen, const void
 
     while( inlen__ >= PARALLELISM_DEGREE * BLAKE2B_BLOCKBYTES )
     {
+        printf("file:%s line:%d\n", __FILE__, __LINE__);
       blake2b_update( S[i], in__, BLAKE2B_BLOCKBYTES );
       in__ += PARALLELISM_DEGREE * BLAKE2B_BLOCKBYTES;
       inlen__ -= PARALLELISM_DEGREE * BLAKE2B_BLOCKBYTES;
@@ -274,6 +285,7 @@ int blake2bp( void *out, size_t outlen, const void *in, size_t inlen, const void
     {
       const size_t left = inlen__ - i * BLAKE2B_BLOCKBYTES;
       const size_t len = left <= BLAKE2B_BLOCKBYTES ? left : BLAKE2B_BLOCKBYTES;
+        printf("file:%s line:%d\n", __FILE__, __LINE__);
       blake2b_update( S[i], in__, len );
     }
 
@@ -285,8 +297,10 @@ int blake2bp( void *out, size_t outlen, const void *in, size_t inlen, const void
 
   FS->last_node = 1; /* Mark as last node */
 
-  for( i = 0; i < PARALLELISM_DEGREE; ++i )
+  for( i = 0; i < PARALLELISM_DEGREE; ++i ) {
+        printf("file:%s line:%d\n", __FILE__, __LINE__);
     blake2b_update( FS, hash[i], BLAKE2B_OUTBYTES );
+  }
 
   return blake2b_final( FS, out, outlen );
 }

@@ -17,6 +17,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
+#include <assert.h>
 
 #if defined(_OPENMP)
 #include <omp.h>
@@ -36,258 +37,283 @@
 */
 static int blake2bp_init_leaf_param( blake2b_state *S, const blake2b_param *P )
 {
-  int err = blake2b_init_param(S, P);
-  S->outlen = P->inner_length;
-  return err;
+    int err = blake2b_init_param(S, P);
+    S->outlen = P->inner_length;
+    return err;
 }
 
 static int blake2bp_init_leaf( blake2b_state *S, size_t outlen, size_t keylen, uint64_t offset )
 {
-  blake2b_param P[1];
-  P->digest_length = (uint8_t)outlen;
-  P->key_length = (uint8_t)keylen;
-  P->fanout = PARALLELISM_DEGREE;
-  P->depth = 2;
-  store32( &P->leaf_length, 0 );
-  store32( &P->node_offset, offset );
-  store32( &P->xof_length, 0 );
-  P->node_depth = 0;
-  P->inner_length = BLAKE2B_OUTBYTES;
-  memset( P->reserved, 0, sizeof( P->reserved ) );
-  memset( P->salt, 0, sizeof( P->salt ) );
-  memset( P->personal, 0, sizeof( P->personal ) );
-  return blake2bp_init_leaf_param( S, P );
+    blake2b_param P[1];
+    P->digest_length = (uint8_t)outlen;
+    P->key_length = (uint8_t)keylen;
+    P->fanout = PARALLELISM_DEGREE;
+    P->depth = 2;
+    store32( &P->leaf_length, 0 );
+    store32( &P->node_offset, offset );
+    store32( &P->xof_length, 0 );
+    P->node_depth = 0;
+    P->inner_length = BLAKE2B_OUTBYTES;
+    memset( P->reserved, 0, sizeof( P->reserved ) );
+    memset( P->salt, 0, sizeof( P->salt ) );
+    memset( P->personal, 0, sizeof( P->personal ) );
+    int result = blake2bp_init_leaf_param( S, P );
+    return result;
 }
 
 static int blake2bp_init_root( blake2b_state *S, size_t outlen, size_t keylen )
 {
-  blake2b_param P[1];
-  P->digest_length = (uint8_t)outlen;
-  P->key_length = (uint8_t)keylen;
-  P->fanout = PARALLELISM_DEGREE;
-  P->depth = 2;
-  store32( &P->leaf_length, 0 );
-  store32( &P->node_offset, 0 );
-  store32( &P->xof_length, 0 );
-  P->node_depth = 1;
-  P->inner_length = BLAKE2B_OUTBYTES;
-  memset( P->reserved, 0, sizeof( P->reserved ) );
-  memset( P->salt, 0, sizeof( P->salt ) );
-  memset( P->personal, 0, sizeof( P->personal ) );
-  return blake2b_init_param( S, P );
+    blake2b_param P[1];
+    P->digest_length = (uint8_t)outlen;
+    P->key_length = (uint8_t)keylen;
+    P->fanout = PARALLELISM_DEGREE;
+    P->depth = 2;
+    store32( &P->leaf_length, 0 );
+    store32( &P->node_offset, 0 );
+    store32( &P->xof_length, 0 );
+    P->node_depth = 1;
+    P->inner_length = BLAKE2B_OUTBYTES;
+    memset( P->reserved, 0, sizeof( P->reserved ) );
+    memset( P->salt, 0, sizeof( P->salt ) );
+    memset( P->personal, 0, sizeof( P->personal ) );
+    int result = blake2b_init_param( S, P );
+    return result;
 }
-
 
 int blake2bp_init( blake2bp_state *S, size_t outlen )
 {
-  size_t i;
+    size_t i;
 
-  if( !outlen || outlen > BLAKE2B_OUTBYTES ) return -1;
+    if( !outlen || outlen > BLAKE2B_OUTBYTES ) return -1;
 
-  memset( S->buf, 0, sizeof( S->buf ) );
-  S->buflen = 0;
-  S->outlen = outlen;
+    memset( S->buf, 0, sizeof( S->buf ) );
+    S->buflen = 0;
+    S->outlen = outlen;
 
-  if( blake2bp_init_root( S->R, outlen, 0 ) < 0 )
-    return -1;
+    // root
+    if( blake2bp_init_root( S->R, outlen, 0 ) < 0 ) {
+        return -1;
+    }
 
-  for( i = 0; i < PARALLELISM_DEGREE; ++i )
-    if( blake2bp_init_leaf( S->S[i], outlen, 0, i ) < 0 ) return -1;
+    for( i = 0; i < PARALLELISM_DEGREE; ++i ) {
+        if( blake2bp_init_leaf( S->S[i], outlen, 0, i ) < 0 ) { 
+            return -1;
+        }
+    }
 
-  S->R->last_node = 1;
-  S->S[PARALLELISM_DEGREE - 1]->last_node = 1;
-  return 0;
+    S->R->last_node = 1;
+    S->S[PARALLELISM_DEGREE - 1]->last_node = 1;
+    return 0;
 }
 
 int blake2bp_init_key( blake2bp_state *S, size_t outlen, const void *key, size_t keylen )
 {
-  size_t i;
+    size_t i;
 
-  if( !outlen || outlen > BLAKE2B_OUTBYTES ) return -1;
+    if( !outlen || outlen > BLAKE2B_OUTBYTES ) return -1;
 
-  if( !key || !keylen || keylen > BLAKE2B_KEYBYTES ) return -1;
+    if( !key || !keylen || keylen > BLAKE2B_KEYBYTES ) return -1;
 
-  memset( S->buf, 0, sizeof( S->buf ) );
-  S->buflen = 0;
-  S->outlen = outlen;
+    memset( S->buf, 0, sizeof( S->buf ) );
+    S->buflen = 0;
+    S->outlen = outlen;
 
-  if( blake2bp_init_root( S->R, outlen, keylen ) < 0 )
-    return -1;
+    if( blake2bp_init_root( S->R, outlen, keylen ) < 0 )
+        return -1;
 
-  for( i = 0; i < PARALLELISM_DEGREE; ++i )
-    if( blake2bp_init_leaf( S->S[i], outlen, keylen, i ) < 0 ) return -1;
+    for( i = 0; i < PARALLELISM_DEGREE; ++i ) {
+        if( blake2bp_init_leaf( S->S[i], outlen, keylen, i ) < 0 ) {
+            return -1;
+        }
+    }
 
-  S->R->last_node = 1;
-  S->S[PARALLELISM_DEGREE - 1]->last_node = 1;
-  {
-    uint8_t block[BLAKE2B_BLOCKBYTES];
-    memset( block, 0, BLAKE2B_BLOCKBYTES );
-    memcpy( block, key, keylen );
+    S->R->last_node = 1;
+    S->S[PARALLELISM_DEGREE - 1]->last_node = 1;
+    {
+        uint8_t block[BLAKE2B_BLOCKBYTES];
+        memset( block, 0, BLAKE2B_BLOCKBYTES );
+        memcpy( block, key, keylen );
 
-    for( i = 0; i < PARALLELISM_DEGREE; ++i )
-      blake2b_update( S->S[i], block, BLAKE2B_BLOCKBYTES );
+        for( i = 0; i < PARALLELISM_DEGREE; ++i ) {
+            blake2b_update( S->S[i], block, BLAKE2B_BLOCKBYTES );
+        }
 
-    secure_zero_memory( block, BLAKE2B_BLOCKBYTES ); /* Burn the key from stack */
-  }
-  return 0;
+        secure_zero_memory( block, BLAKE2B_BLOCKBYTES );
+    }
+    return 0;
 }
-
 
 int blake2bp_update( blake2bp_state *S, const void *pin, size_t inlen )
 {
-  const unsigned char * in = (const unsigned char *)pin;
-  size_t left = S->buflen;
-  size_t fill = sizeof( S->buf ) - left;
-  size_t i;
+    const unsigned char * in = (const unsigned char *)pin;
+    size_t left = S->buflen;
+    size_t fill = sizeof( S->buf ) - left;
+    size_t i;
 
-  if( left && inlen >= fill )
-  {
-    memcpy( S->buf + left, in, fill );
+    if( left && inlen >= fill )
+    {
+        memcpy( S->buf + left, in, fill );
 
-    for( i = 0; i < PARALLELISM_DEGREE; ++i )
-      blake2b_update( S->S[i], S->buf + i * BLAKE2B_BLOCKBYTES, BLAKE2B_BLOCKBYTES );
+        for( i = 0; i < PARALLELISM_DEGREE; ++i ) {
+            blake2b_update( S->S[i], S->buf + i * BLAKE2B_BLOCKBYTES, BLAKE2B_BLOCKBYTES );
+        }
 
-    in += fill;
-    inlen -= fill;
-    left = 0;
-  }
+        in += fill;
+        inlen -= fill;
+        left = 0;
+    }
 
 #if defined(_OPENMP)
-  #pragma omp parallel shared(S), num_threads(PARALLELISM_DEGREE)
+#pragma omp parallel shared(S), num_threads(PARALLELISM_DEGREE)
 #else
 
-  for( i = 0; i < PARALLELISM_DEGREE; ++i )
+    for( i = 0; i < PARALLELISM_DEGREE; ++i )
 #endif
-  {
-#if defined(_OPENMP)
-    size_t      i = omp_get_thread_num();
-#endif
-    size_t inlen__ = inlen;
-    const unsigned char *in__ = ( const unsigned char * )in;
-    in__ += i * BLAKE2B_BLOCKBYTES;
-
-    while( inlen__ >= PARALLELISM_DEGREE * BLAKE2B_BLOCKBYTES )
     {
-      blake2b_update( S->S[i], in__, BLAKE2B_BLOCKBYTES );
-      in__ += PARALLELISM_DEGREE * BLAKE2B_BLOCKBYTES;
-      inlen__ -= PARALLELISM_DEGREE * BLAKE2B_BLOCKBYTES;
+#if defined(_OPENMP)
+        size_t      i = omp_get_thread_num();
+#endif
+        size_t inlen__ = inlen;
+        const unsigned char *in__ = ( const unsigned char * )in;
+        in__ += i * BLAKE2B_BLOCKBYTES;
+
+        while( inlen__ >= PARALLELISM_DEGREE * BLAKE2B_BLOCKBYTES )
+        {
+            blake2b_update( S->S[i], in__, BLAKE2B_BLOCKBYTES );
+            in__ += PARALLELISM_DEGREE * BLAKE2B_BLOCKBYTES;
+            inlen__ -= PARALLELISM_DEGREE * BLAKE2B_BLOCKBYTES;
+        }
     }
-  }
 
-  in += inlen - inlen % ( PARALLELISM_DEGREE * BLAKE2B_BLOCKBYTES );
-  inlen %= PARALLELISM_DEGREE * BLAKE2B_BLOCKBYTES;
+    in += inlen - inlen % ( PARALLELISM_DEGREE * BLAKE2B_BLOCKBYTES );
+    inlen %= PARALLELISM_DEGREE * BLAKE2B_BLOCKBYTES;
 
-  if( inlen > 0 )
-    memcpy( S->buf + left, in, inlen );
+    if( inlen > 0 )
+        memcpy( S->buf + left, in, inlen );
 
-  S->buflen = left + inlen;
-  return 0;
+    S->buflen = left + inlen;
+    return 0;
 }
 
 int blake2bp_final( blake2bp_state *S, void *out, size_t outlen )
 {
-  uint8_t hash[PARALLELISM_DEGREE][BLAKE2B_OUTBYTES];
-  size_t i;
+    uint8_t hash[PARALLELISM_DEGREE][BLAKE2B_OUTBYTES];
+    size_t i;
 
-  if(out == NULL || outlen < S->outlen) {
-    return -1;
-  }
-
-  for( i = 0; i < PARALLELISM_DEGREE; ++i )
-  {
-    if( S->buflen > i * BLAKE2B_BLOCKBYTES )
-    {
-      size_t left = S->buflen - i * BLAKE2B_BLOCKBYTES;
-
-      if( left > BLAKE2B_BLOCKBYTES ) left = BLAKE2B_BLOCKBYTES;
-
-      blake2b_update( S->S[i], S->buf + i * BLAKE2B_BLOCKBYTES, left );
+    if(out == NULL || outlen < S->outlen) {
+        return -1;
     }
-
-    blake2b_final( S->S[i], hash[i], BLAKE2B_OUTBYTES );
-  }
-
-  for( i = 0; i < PARALLELISM_DEGREE; ++i )
-    blake2b_update( S->R, hash[i], BLAKE2B_OUTBYTES );
-
-  return blake2b_final( S->R, out, S->outlen );
-}
-
-int blake2bp( void *out, size_t outlen, const void *in, size_t inlen, const void *key, size_t keylen )
-{
-  uint8_t hash[PARALLELISM_DEGREE][BLAKE2B_OUTBYTES];
-  blake2b_state S[PARALLELISM_DEGREE][1];
-  blake2b_state FS[1];
-  size_t i;
-
-  /* Verify parameters */
-  if ( NULL == in && inlen > 0 ) return -1;
-
-  if ( NULL == out ) return -1;
-
-  if( NULL == key && keylen > 0 ) return -1;
-
-  if( !outlen || outlen > BLAKE2B_OUTBYTES ) return -1;
-
-  if( keylen > BLAKE2B_KEYBYTES ) return -1;
-
-  for( i = 0; i < PARALLELISM_DEGREE; ++i )
-    if( blake2bp_init_leaf( S[i], outlen, keylen, i ) < 0 ) return -1;
-
-  S[PARALLELISM_DEGREE - 1]->last_node = 1; /* mark last node */
-
-  if( keylen > 0 )
-  {
-    uint8_t block[BLAKE2B_BLOCKBYTES];
-    memset( block, 0, BLAKE2B_BLOCKBYTES );
-    memcpy( block, key, keylen );
 
     for( i = 0; i < PARALLELISM_DEGREE; ++i )
-      blake2b_update( S[i], block, BLAKE2B_BLOCKBYTES );
+    {
+        if( S->buflen > i * BLAKE2B_BLOCKBYTES )
+        {
+            size_t left = S->buflen - i * BLAKE2B_BLOCKBYTES;
 
-    secure_zero_memory( block, BLAKE2B_BLOCKBYTES ); /* Burn the key from stack */
-  }
+            if( left > BLAKE2B_BLOCKBYTES ) {
+                left = BLAKE2B_BLOCKBYTES;
+            }
+
+            blake2b_update( S->S[i], S->buf + i * BLAKE2B_BLOCKBYTES, left );
+        }
+
+        blake2b_final( S->S[i], hash[i], BLAKE2B_OUTBYTES );
+    }
+
+    for( i = 0; i < PARALLELISM_DEGREE; ++i ) {
+        blake2b_update( S->R, hash[i], BLAKE2B_OUTBYTES );
+    }
+
+    return blake2b_final( S->R, out, S->outlen );
+}
+
+// 実質実行関数(この内部で並列化が走る)
+int blake2bp( void *out, size_t outlen, const void *in, size_t inlen, const void *key, size_t keylen )
+{
+    uint8_t* p = key;
+
+    uint8_t hash[PARALLELISM_DEGREE][BLAKE2B_OUTBYTES];
+    blake2b_state S[PARALLELISM_DEGREE][1];
+    blake2b_state FS[1];
+    size_t i;
+
+    /* Verify parameters */
+    if ( NULL == in && inlen > 0 ) return -1;
+
+    if ( NULL == out ) return -1;
+
+    if( NULL == key && keylen > 0 ) return -1;
+
+    if( !outlen || outlen > BLAKE2B_OUTBYTES ) return -1;
+
+    if( keylen > BLAKE2B_KEYBYTES ) return -1;
+
+    for( i = 0; i < PARALLELISM_DEGREE; ++i ) {
+        if( blake2bp_init_leaf( S[i], outlen, keylen, i ) < 0 ) {
+            return -1;
+        }
+    }
+
+    S[PARALLELISM_DEGREE - 1]->last_node = 1; /* mark last node */
+
+    if( keylen > 0 )
+    {
+        uint8_t block[BLAKE2B_BLOCKBYTES];
+        memset( block, 0, BLAKE2B_BLOCKBYTES );
+        memcpy( block, key, keylen );
+
+        for( i = 0; i < PARALLELISM_DEGREE; ++i ) {
+            blake2b_update( S[i], block, BLAKE2B_BLOCKBYTES );
+        }
+
+        secure_zero_memory( block, BLAKE2B_BLOCKBYTES ); /* Burn the key from stack */
+    }
 
 #if defined(_OPENMP)
-  #pragma omp parallel shared(S,hash), num_threads(PARALLELISM_DEGREE)
+#pragma omp parallel shared(S,hash), num_threads(PARALLELISM_DEGREE)
+    assert(false);
 #else
 
-  for( i = 0; i < PARALLELISM_DEGREE; ++i )
+    for( i = 0; i < PARALLELISM_DEGREE; ++i )
 #endif
-  {
+    {
 #if defined(_OPENMP)
-    size_t      i = omp_get_thread_num();
+        size_t      i = omp_get_thread_num();
 #endif
-    size_t inlen__ = inlen;
-    const unsigned char *in__ = ( const unsigned char * )in;
-    in__ += i * BLAKE2B_BLOCKBYTES;
+        size_t inlen__ = inlen;
+        const unsigned char *in__ = ( const unsigned char * )in;
+        // 4ブロックに分けた先頭位置へ移動する
+        in__ += i * BLAKE2B_BLOCKBYTES;
 
-    while( inlen__ >= PARALLELISM_DEGREE * BLAKE2B_BLOCKBYTES )
-    {
-      blake2b_update( S[i], in__, BLAKE2B_BLOCKBYTES );
-      in__ += PARALLELISM_DEGREE * BLAKE2B_BLOCKBYTES;
-      inlen__ -= PARALLELISM_DEGREE * BLAKE2B_BLOCKBYTES;
+        while (inlen__ >= PARALLELISM_DEGREE * BLAKE2B_BLOCKBYTES)
+        {
+            blake2b_update( S[i], in__, BLAKE2B_BLOCKBYTES );
+
+            in__ += PARALLELISM_DEGREE * BLAKE2B_BLOCKBYTES;
+            inlen__ -= PARALLELISM_DEGREE * BLAKE2B_BLOCKBYTES;
+        }
+
+        if( inlen__ > i * BLAKE2B_BLOCKBYTES )
+        {
+            const size_t left = inlen__ - i * BLAKE2B_BLOCKBYTES;
+            const size_t len = left <= BLAKE2B_BLOCKBYTES ? left : BLAKE2B_BLOCKBYTES;
+            blake2b_update( S[i], in__, len );
+        }
+
+        // hash[i] の初めての出力
+        blake2b_final( S[i], hash[i], BLAKE2B_OUTBYTES );
     }
 
-    if( inlen__ > i * BLAKE2B_BLOCKBYTES )
-    {
-      const size_t left = inlen__ - i * BLAKE2B_BLOCKBYTES;
-      const size_t len = left <= BLAKE2B_BLOCKBYTES ? left : BLAKE2B_BLOCKBYTES;
-      blake2b_update( S[i], in__, len );
+    if (blake2bp_init_root( FS, outlen, keylen ) < 0)
+        return -1;
+
+    FS->last_node = 1; /* Mark as last node */
+
+    for( i = 0; i < PARALLELISM_DEGREE; ++i ) {
+        blake2b_update( FS, hash[i], BLAKE2B_OUTBYTES );
     }
 
-    blake2b_final( S[i], hash[i], BLAKE2B_OUTBYTES );
-  }
-
-  if( blake2bp_init_root( FS, outlen, keylen ) < 0 )
-    return -1;
-
-  FS->last_node = 1; /* Mark as last node */
-
-  for( i = 0; i < PARALLELISM_DEGREE; ++i )
-    blake2b_update( FS, hash[i], BLAKE2B_OUTBYTES );
-
-  return blake2b_final( FS, out, outlen );;
+    return blake2b_final( FS, out, outlen );;
 }
 
 #if defined(BLAKE2BP_SELFTEST)
@@ -295,65 +321,70 @@ int blake2bp( void *out, size_t outlen, const void *in, size_t inlen, const void
 #include "blake2-kat.h"
 int main( void )
 {
-  uint8_t key[BLAKE2B_KEYBYTES];
-  uint8_t buf[BLAKE2_KAT_LENGTH];
-  size_t i, step;
+    uint8_t key[BLAKE2B_KEYBYTES];
+    uint8_t buf[BLAKE2_KAT_LENGTH];
+    size_t i, step;
 
-  for( i = 0; i < BLAKE2B_KEYBYTES; ++i )
-    key[i] = ( uint8_t )i;
+    for( i = 0; i < BLAKE2B_KEYBYTES; ++i ) {
+        key[i] = (uint8_t)i;
+    }
 
-  for( i = 0; i < BLAKE2_KAT_LENGTH; ++i )
-    buf[i] = ( uint8_t )i;
+    for( i = 0; i < BLAKE2_KAT_LENGTH; ++i )
+        buf[i] = (uint8_t)i;
 
-  /* Test simple API */
-  for( i = 0; i < BLAKE2_KAT_LENGTH; ++i )
-  {
-    uint8_t hash[BLAKE2B_OUTBYTES];
-    blake2bp( hash, BLAKE2B_OUTBYTES, buf, i, key, BLAKE2B_KEYBYTES );
-
-    if( 0 != memcmp( hash, blake2bp_keyed_kat[i], BLAKE2B_OUTBYTES ) )
+    /* Test simple API */
+    // keyあり BLAKE2_KAT_LENGTH(=256) 回のテスト
+    for( i = 0; i < BLAKE2_KAT_LENGTH; ++i )
     {
-      goto fail;
-    }
-  }
+        uint8_t hash[BLAKE2B_OUTBYTES];
 
-  /* Test streaming API */
-  for(step = 1; step < BLAKE2B_BLOCKBYTES; ++step) {
-    for (i = 0; i < BLAKE2_KAT_LENGTH; ++i) {
-      uint8_t hash[BLAKE2B_OUTBYTES];
-      blake2bp_state S;
-      uint8_t * p = buf;
-      size_t mlen = i;
-      int err = 0;
+        blake2bp( hash, BLAKE2B_OUTBYTES, buf, i, key, BLAKE2B_KEYBYTES );
 
-      if( (err = blake2bp_init_key(&S, BLAKE2B_OUTBYTES, key, BLAKE2B_KEYBYTES)) < 0 ) {
-        goto fail;
-      }
-
-      while (mlen >= step) {
-        if ( (err = blake2bp_update(&S, p, step)) < 0 ) {
-          goto fail;
+        if( 0 != memcmp( hash, blake2bp_keyed_kat[i], BLAKE2B_OUTBYTES ) )
+        {
+            goto fail;
         }
-        mlen -= step;
-        p += step;
-      }
-      if ( (err = blake2bp_update(&S, p, mlen)) < 0) {
-        goto fail;
-      }
-      if ( (err = blake2bp_final(&S, hash, BLAKE2B_OUTBYTES)) < 0) {
-        goto fail;
-      }
-
-      if (0 != memcmp(hash, blake2bp_keyed_kat[i], BLAKE2B_OUTBYTES)) {
-        goto fail;
-      }
     }
-  }
 
-  puts( "ok" );
-  return 0;
+    /* Test streaming API */
+    /*
+    for(step = 1; step < BLAKE2B_BLOCKBYTES; ++step) {
+        for (i = 0; i < BLAKE2_KAT_LENGTH; ++i) {
+            uint8_t hash[BLAKE2B_OUTBYTES];
+            blake2bp_state S;
+            uint8_t * p = buf;
+            size_t mlen = i;
+            int err = 0;
+
+            if( (err = blake2bp_init_key(&S, BLAKE2B_OUTBYTES, key, BLAKE2B_KEYBYTES)) < 0 ) {
+                goto fail;
+            }
+
+            while (mlen >= step) {
+                if ( (err = blake2bp_update(&S, p, step)) < 0 ) {
+                    goto fail;
+                }
+                mlen -= step;
+                p += step;
+            }
+            if ( (err = blake2bp_update(&S, p, mlen)) < 0) {
+                goto fail;
+            }
+            if ( (err = blake2bp_final(&S, hash, BLAKE2B_OUTBYTES)) < 0) {
+                goto fail;
+            }
+
+            if (0 != memcmp(hash, blake2bp_keyed_kat[i], BLAKE2B_OUTBYTES)) {
+                goto fail;
+            }
+        }
+    }
+    */
+
+    puts( "ok" );
+    return 0;
 fail:
-  puts("error");
-  return -1;
+    puts("error");
+    return -1;
 }
 #endif
